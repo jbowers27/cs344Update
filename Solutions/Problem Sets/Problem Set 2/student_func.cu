@@ -219,7 +219,7 @@ void allocateMemoryAndCopyToGPU(const size_t numRowsImage, const size_t numColsI
 
 }
 
-void your_gaussian_blur(const uchar4 * const h_inputImageRGBA, uchar4 * const d_inputImageRGBA,
+void your_gaussian_blur(uchar4 * const d_inputImageRGBA,
                         uchar4* const d_outputImageRGBA, const size_t numRows, const size_t numCols,
                         unsigned char *d_redBlurred, 
                         unsigned char *d_greenBlurred, 

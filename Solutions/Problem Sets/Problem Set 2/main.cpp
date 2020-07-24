@@ -15,7 +15,7 @@
 
 /*******  DEFINED IN student_func.cu *********/
 
-void your_gaussian_blur(const uchar4 * const h_inputImageRGBA, uchar4 * const d_inputImageRGBA,
+void your_gaussian_blur(uchar4* const d_inputImageRGBA,
                         uchar4* const d_outputImageRGBA,
                         const size_t numRows, const size_t numCols,
                         unsigned char *d_redBlurred,
@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
   GpuTimer timer;
   timer.Start();
   //call the students' code
-  your_gaussian_blur(h_inputImageRGBA, d_inputImageRGBA, d_outputImageRGBA, numRows(), numCols(),
+  your_gaussian_blur(d_inputImageRGBA, d_outputImageRGBA, numRows(), numCols(),
                      d_redBlurred, d_greenBlurred, d_blueBlurred, filterWidth);
   timer.Stop();
   cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
