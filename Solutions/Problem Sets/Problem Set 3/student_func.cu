@@ -224,44 +224,39 @@ void histogram_atomics(const float* const d_logLuminance, unsigned int* d_hist, 
 }
 
 __global__
-void histogram_shared(const float* const d_logLuminance, unsigned int* d_hist, float min_logLum, float max_logLum, 
-        const size_t numRows, const size_t numCols, const size_t numBins){
-    
-    //Calculate the luminosity histogram by implementing a shared-memory histogram in each block and recombining them at the end.
-    extern __shared__ unsigned int s_hist[];
+void histogram_local(const float* const d_logLuminance, unsigned int* d_hist, float min_logLum, float max_logLum, 
+        const size_t numRows, const size_t numCols, const size_t numBins, int numPerThread){
 
-    int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    int tid = threadIdx.x;
+    //In this histogram implementation, each thread is responsible for incrementing a local histogram. These histograms
+    // are then combined at the end. Due to the large numer of bins we are dealing with, this implementation is quite inefficient.
+    
+    
+    int idx = (blockIdx.x*blockDim.x + threadIdx.x)*numPerThread;
 
-    if(idx >= numRows*numCols){
-        return;
+    //Initialize local histogram
+    unsigned int local_hist[1024];
+    for(int i = 0; i < numBins; i++){
+        local_hist[i] = 0;
     }
-    
-    //Set shared memory histogram to 0 initially
-    if(tid < numBins){
-        s_hist[tid] = 0;
+
+    //fill local histogram
+    for(int i = 0; i < numPerThread; i++){
+        if(idx + i < numRows*numCols){
+            float lumRange = max_logLum - min_logLum;
+            int bin = min(static_cast<int>(numBins-1), static_cast<int>(floor((d_logLuminance[idx+i] - min_logLum) / lumRange * numBins))); 
+            local_hist[bin] += 1; 
+        }
     }
-    __syncthreads();
-    
-    //Calculate bin for current thread
-    float lumRange = max_logLum - min_logLum;
-    int bin = min(static_cast<int>(numBins-1), static_cast<int>(floor((d_logLuminance[idx] - min_logLum) / lumRange * numBins))); 
-    
-    //Atomically update bincount in shared memory
-    atomicAdd(&s_hist[bin], 1);
-    __syncthreads();
-    
-    //copy shared memory to global device memory
-    if(tid < numBins){
-        atomicAdd(&d_hist[tid], s_hist[tid]);
+
+    for(int i = 0; i < numBins; i++){
+        atomicAdd(&d_hist[i], local_hist[i]);
     }
 }
 
 __global__
 void cdf_scan(unsigned int* d_in, unsigned int* d_out, const size_t numBins){
-    
-    //This function generates a cdf from an input histogram following the Hillis & Steele algorithm. 
-    //It assumes that the number of bins in the histogram will fit on a single block.
+
+    //This function generates a cdf from an input histogram. It assumes that the number of bins in the histogram will fit on a single block.
     
 
     //External memory is declared as 2*sizeof(type)*numBins so that we can have a double buffer in shared memory
@@ -377,16 +372,13 @@ void parallel_cdf(const float* const d_logLuminance, unsigned int* const d_cdf, 
     checkCudaErrors(cudaMemset(d_hist, 0, sizeof(unsigned int)*numBins));
     
     //generate histogram using the naive atomics method
-    histogram_atomics<<<gridSize, blockSize>>>(d_logLuminance, d_hist, min_logLum, max_logLum, 
-                                                                                numRows, numCols, numBins);
+    histogram_atomics<<<gridSize, blockSize>>>(d_logLuminance, d_hist, min_logLum, max_logLum, numRows, numCols, numBins);
     
-    /* // This is an implementaiton of the histogram using shared memory in each of the blocks. This method is roughly 1ms slower with 
-       //     the instructor implementation of this particular tone-mapping application.
-
-    histogram_shared<<<gridSize, blockSize, sizeof(unsigned int)*numBins>>>(d_logLuminance, d_hist, 
-                                                                            min_logLum, max_logLum, 
-                                                                                numRows, numCols, numBins);*/
-    //exclusive sum scan of histogram to generate cdf
+    /* This is an implementation of the histogram where each thread is resposible for some number of elements binned in local memory. These are then combined atomically to global memory at the end.
+       Due to the large number of bins in this particular application, this method is substantially less efficient than the naive histogram method.
+    int numPerThread = 256;
+    histogram_local<<<floor(gridSize/numPerThread)+1, blockSize>>>(d_logLuminance, d_hist, min_logLum, max_logLum, 
+                                                                        numRows, numCols, numBins, numPerThread); */
     cdf_scan<<<1, numBins, sizeof(unsigned int)*numBins*2>>>(d_hist, d_cdf, numBins);
     //blelloch_scan<<<1, numBins/2, sizeof(unsigned int)*numBins>>>(d_hist, d_cdf, numBins);
 }
