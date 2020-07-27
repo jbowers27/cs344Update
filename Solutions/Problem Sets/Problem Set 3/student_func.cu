@@ -259,8 +259,9 @@ void histogram_shared(const float* const d_logLuminance, unsigned int* d_hist, f
 
 __global__
 void cdf_scan(unsigned int* d_in, unsigned int* d_out, const size_t numBins){
-
-    //This function generates a cdf from an input histogram. It assumes that the number of bins in the histogram will fit on a single block.
+    
+    //This function generates a cdf from an input histogram following the Hillis & Steele algorithm. 
+    //It assumes that the number of bins in the histogram will fit on a single block.
     
 
     //External memory is declared as 2*sizeof(type)*numBins so that we can have a double buffer in shared memory
