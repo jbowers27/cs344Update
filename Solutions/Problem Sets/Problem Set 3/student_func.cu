@@ -80,6 +80,7 @@
 */
 
 #include "utils.h"
+#include <stdio.h>
 
 __global__
 void max_reduce(const float* const d_in, float* d_out, int inputSize){
@@ -304,6 +305,63 @@ void cdf_scan(unsigned int* d_in, unsigned int* d_out, const size_t numBins){
     d_out[tid] = s_cdf[reg1*numBins + tid];
 }
 
+__global__
+void blelloch_scan(unsigned int* d_in, unsigned int* d_out, const size_t numBins){
+    //This particular scan implementation is taken from Nvidia's "GPU Gems 3"
+
+    extern __shared__ unsigned int s_cdf[];
+
+    int tid = threadIdx.x;
+    if(tid >= numBins){
+        return;
+    }
+
+    int offset = 1;
+
+    //Initialize shared memory array
+    s_cdf[2*tid] = d_in[2*tid];
+    s_cdf[2*tid+1] = d_in[2*tid+1];
+    
+    //Reduce Tree Inplace for Upsweep
+    for(int d = numBins>>1; d > 0; d >>= 1){
+        
+        __syncthreads();
+        
+        if(tid < d){
+            int i1 = offset*(2*tid+1) - 1;
+            int i2 = offset*(2*tid+2) - 1;
+            s_cdf[i2] += s_cdf[i1];
+        
+        }
+        offset <<= 1;
+    }
+
+    //Clear last element for exclusive scan
+    if(tid == 0){ s_cdf[numBins-1] = 0; }
+
+    //Downsweep Scan
+    for(int d = 1; d < numBins; d <<= 1){
+        
+        offset >>= 1;
+        __syncthreads();
+        
+        if(tid < d){
+            int i1 = offset*(2*tid+1) - 1;
+            int i2 = offset*(2*tid+2) - 1;
+            unsigned int temp = s_cdf[i1];
+            s_cdf[i1] = s_cdf[i2];
+            s_cdf[i2] += temp;
+        }
+
+    }
+    __syncthreads();
+
+    //Write to output
+    d_out[2*tid] = s_cdf[2*tid];
+    d_out[2*tid+1] = s_cdf[2*tid+1];
+
+}
+
 void parallel_cdf(const float* const d_logLuminance, unsigned int* const d_cdf, float min_logLum, float max_logLum, 
         const size_t numRows, const size_t numCols, const size_t numBins){
     
@@ -329,7 +387,7 @@ void parallel_cdf(const float* const d_logLuminance, unsigned int* const d_cdf, 
                                                                                 numRows, numCols, numBins);*/
     //exclusive sum scan of histogram to generate cdf
     cdf_scan<<<1, numBins, sizeof(unsigned int)*numBins*2>>>(d_hist, d_cdf, numBins);
-
+    //blelloch_scan<<<1, numBins/2, sizeof(unsigned int)*numBins>>>(d_hist, d_cdf, numBins);
 }
 
 void your_histogram_and_prefixsum(const float* const d_logLuminance,
