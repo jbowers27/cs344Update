@@ -273,6 +273,10 @@ void your_sort(unsigned int* const d_inputVals,
         swap += 1;
     }
     
+    //16 Iterations means our final result is in the d_input* variables
+    checkCudaErrors(cudaMemcpy(d_outputVals, d_inputVals, sizeof(unsigned int)*numElems, cudaMemcpyDeviceToDevice));
+    checkCudaErrors(cudaMemcpy(d_outputPos, d_inputPos, sizeof(unsigned int)*numElems, cudaMemcpyDeviceToDevice));
+
     //free device memory
     checkCudaErrors(cudaFree(d_blockSum));
     checkCudaErrors(cudaFree(d_mask));     
